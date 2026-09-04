@@ -1,0 +1,14 @@
+node_modules
+.next
+.git
+output
+.env
+.local-credentials
+.ruledeck
+.claude-flow
+.cursor
+.vscode
+*.log
+.DS_Store
+coverage
+docs

@@ -1,0 +1,226 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  MANAGER
+  DEVELOPER
+}
+
+enum ArtifactType {
+  RULE
+  PROMPT
+  PROCEDURE
+  TOOL
+}
+
+enum ComplianceStatus {
+  PENDING
+  FOLLOWING
+  DRIFTED
+  MISSING
+  STALE
+}
+
+enum ProjectKind {
+  PROJECT
+  GLOBAL
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  name         String
+  passwordHash String
+  role         Role     @default(DEVELOPER)
+  createdAt    DateTime @default(now())
+
+  sessions       Session[]
+  versions       ArtifactVersion[]
+  releases       Release[]
+  auditEvents    AuditEvent[]
+  generateRuns   GenerateRun[]
+  invitesCreated Invite[]
+  memberships    Membership[]
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  tokenHash String   @unique
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+model Project {
+  id            String      @id @default(cuid())
+  slug          String      @unique
+  name          String
+  description   String      @default("")
+  kind          ProjectKind @default(PROJECT)
+  liveReleaseId String?     @unique
+  liveRelease   Release? @relation("LiveRelease", fields: [liveReleaseId], references: [id], onDelete: SetNull)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  artifacts    Artifact[]
+  releases     Release[]  @relation("ProjectReleases")
+  auditEvents  AuditEvent[]
+  generateRuns GenerateRun[]
+  invites      Invite[]
+  memberships  Membership[]
+}
+
+model Artifact {
+  id          String       @id @default(cuid())
+  projectId   String
+  project     Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  type        ArtifactType
+  slug        String
+  title       String
+  description String       @default("")
+  targets     String[]
+  globs       String[]
+  alwaysApply Boolean      @default(false)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  versions     ArtifactVersion[]
+  releaseItems ReleaseItem[]
+
+  @@unique([projectId, type, slug])
+  @@index([projectId, type])
+}
+
+model ArtifactVersion {
+  id         String   @id @default(cuid())
+  artifactId String
+  artifact   Artifact @relation(fields: [artifactId], references: [id], onDelete: Cascade)
+  version    Int
+  content    String
+  message    String   @default("")
+  authorId   String
+  author     User     @relation(fields: [authorId], references: [id])
+  createdAt  DateTime @default(now())
+
+  releaseItems ReleaseItem[]
+
+  @@unique([artifactId, version])
+  @@index([artifactId, createdAt])
+}
+
+model Release {
+  id            String   @id @default(cuid())
+  projectId     String
+  project       Project  @relation("ProjectReleases", fields: [projectId], references: [id], onDelete: Cascade)
+  liveFor       Project? @relation("LiveRelease")
+  label         String
+  changelog     String   @default("")
+  publishedById String
+  publishedBy   User     @relation(fields: [publishedById], references: [id])
+  publishedAt   DateTime @default(now())
+
+  items        ReleaseItem[]
+  generateRuns GenerateRun[]
+  appliedBy    Membership[]
+
+  @@unique([projectId, label])
+  @@index([projectId, publishedAt])
+}
+
+model ReleaseItem {
+  id        String          @id @default(cuid())
+  releaseId String
+  release   Release         @relation(fields: [releaseId], references: [id], onDelete: Cascade)
+  artifactId String
+  artifact   Artifact       @relation(fields: [artifactId], references: [id], onDelete: Cascade)
+  versionId  String
+  version    ArtifactVersion @relation(fields: [versionId], references: [id], onDelete: Cascade)
+
+  @@unique([releaseId, artifactId])
+}
+
+model AuditEvent {
+  id         String   @id @default(cuid())
+  actorId    String?
+  actor      User?    @relation(fields: [actorId], references: [id], onDelete: SetNull)
+  projectId  String?
+  project    Project? @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  action     String
+  entityType String
+  entityId   String?
+  metadata   Json?
+  createdAt  DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([projectId, createdAt])
+  @@index([actorId, createdAt])
+}
+
+model GenerateRun {
+  id          String   @id @default(cuid())
+  projectId   String
+  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  releaseId   String?
+  release     Release? @relation(fields: [releaseId], references: [id], onDelete: SetNull)
+  actorId     String
+  actor       User     @relation(fields: [actorId], references: [id])
+  targets     String[]
+  outputRoot  String
+  fileCount   Int
+  contentHash String
+  drifted     Boolean  @default(false)
+  createdAt   DateTime @default(now())
+
+  @@index([projectId, createdAt])
+}
+
+model Invite {
+  id          String    @id @default(cuid())
+  tokenHash   String    @unique
+  projectId   String
+  project     Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  createdById String
+  createdBy   User      @relation(fields: [createdById], references: [id], onDelete: Cascade)
+  role        Role      @default(DEVELOPER)
+  expiresAt   DateTime
+  maxUses     Int       @default(50)
+  usedCount   Int       @default(0)
+  revokedAt   DateTime?
+  createdAt   DateTime  @default(now())
+
+  @@index([projectId, createdAt])
+}
+
+model Membership {
+  id                    String           @id @default(cuid())
+  projectId             String
+  project               Project          @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  userId                String
+  user                  User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role                  Role             @default(DEVELOPER)
+  platforms             String[]
+  onboardingCompletedAt DateTime?
+  appliedReleaseId      String?
+  appliedRelease        Release?         @relation(fields: [appliedReleaseId], references: [id], onDelete: SetNull)
+  appliedHash           String?
+  lastCheckInAt         DateTime?
+  writeConsentAt        DateTime?
+  syncTokenHash         String?          @unique
+  workspaceMatchers     String[]
+  lastWorkspace         String?
+  compliance            ComplianceStatus @default(PENDING)
+  createdAt             DateTime         @default(now())
+
+  @@unique([projectId, userId])
+  @@index([projectId, compliance])
+}
