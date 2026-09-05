@@ -6,19 +6,39 @@ On a matching git checkout, RuleDeck writes Cursor, Claude Code, and GitHub Copi
 
 ## How it works
 
-```
-Manager console                  Developer laptop
-─────────────────                ────────────────
-edit catalog                     open the real app repo in Cursor
-publish live release             copy .ruledeck kit into that repo
-invite the team                  node .ruledeck/sync.mjs install-hooks
-                                 git pull  → writes pack
-                                 git push  → rewrites pack, blocks if uncommitted
+A Cursor session is the folder you open. The live pack is global plus that project. Sync only writes in a linked workspace.
+
+```mermaid
+flowchart TD
+  global["Global pack<br/>Org-wide live release"]
+  project["Project pack<br/>Extras + same-slug overrides"]
+  merge["Merged live pack<br/>What developers receive"]
+  grant["Link a workspace<br/>Folder name or git remote"]
+  match["This Cursor window<br/>Folder matches the project"]
+  other["Other window<br/>Different folder or remote"]
+  write["Write policy files<br/>On git pull and git push"]
+  skip["Skip<br/>No files touched"]
+  checkin["Check-in<br/>Team sees this session"]
+
+  global --> merge
+  project --> merge
+  merge --> grant
+  grant --> match
+  grant --> other
+  match --> write
+  write --> checkin
+  other --> skip
 ```
 
-**Pack merge:** every project pack is `global live + project live`. The same `type:slug` in the project wins.
+If the window is this RuleDeck repo, or any checkout that is not on the match list, hooks print skip and leave files alone. Do not install hooks here.
 
-**Workspace match:** hooks only write when the folder name or git remote matches `.ruledeck/config.json` `match`. Open a different repo and RuleDeck skips (exit 0). Do not install hooks in this RuleDeck app repo.
+**Manager.** Publish the global pack once. Publish each project for extras. Same slug in a project overrides global for that team only. Developers never apply the global project directly — they join a team project and inherit global automatically.
+
+**Developer.** Grant write access, name the folder or git remote, copy `.ruledeck` into that checkout, then `install-hooks` and `pull` there. Another Cursor window on another repo can link a different RuleDeck project — or none.
+
+**After merge** (`post-merge`, `post-checkout`, `post-rewrite`): fetch the merged live pack and write Cursor / Claude Code / Copilot files into this working tree.
+
+**Before push** (`pre-push`): write the same pack again and block the push if those files still need a commit.
 
 ## Quick start (Docker)
 
